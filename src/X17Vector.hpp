@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iostream>
 #include <cstdio>
+#include <algorithm>
 
 #ifdef X17_VDEBUG
 #define vector_log()                                            \
@@ -14,6 +15,9 @@
 #endif
 
 namespace X17 {
+
+static const int8_t* POISON_PTR = reinterpret_cast<const int8_t*> (0xDEADDEAD);
+static const uint64_t POISON_UINT = static_cast<uint64_t> (0xDEADBEEF);
 
 template <typename T>
 class vector {
@@ -32,27 +36,63 @@ class vector {
         m_data = new int8_t[m_capacity * m_typesize];
     }
 
-    explicit vector(const uint64_t elem_counter, const T&& init_value = T()) 
-        : m_capacity(elem_counter), m_size(0) {
+    explicit vector(const uint64_t elem_total, T&& init_value = T())
+        : m_capacity(elem_total), m_size(0), m_typesize(sizeof(T)) {
         vector_log();
 
         m_data = new int8_t[m_capacity * m_typesize];
-        std::fill(static_cast<T>(m_data), static_cast<T>(m_data + m_capacity * m_typesize), init_value);
+        init_memory(get_iterator(), 0, elem_total, init_value);
     }
 
-    explicit vector(const vector<T>& other) {
+    explicit vector(const vector<T>& other)
+        : m_capacity(other.m_capacity),
+          m_size(other.m_size),
+          m_typesize(other.m_typesize) {
         vector_log();
-        
-        m_capacity = other.m_capacity;
-        m_size = other.m_size;
 
         m_data = new int8_t[m_capacity * m_typesize];
+        // other.get_iterator() returns const_iterator
+        init_memory(get_iterator(), 0, m_size, other.get_iterator());
     }
-    explicit vector(vector<T>&& other);
+
+    // move constructor
+    explicit vector(vector<T>&& other)
+        : m_capacity(other.m_capacity), m_size(other.m_size), m_data(nullptr) {
+        vector_log();
+
+        // ONLY swapping pointers, stealing it, no copying!    
+        std::swap(this->m_data, other.m_data);
+    }
+
+    ~vector() {
+        vector_log();
+
+        if (m_data != nullptr) {
+            destroy_memory(m_data, 0, m_size);
+
+            // WARNING: don't forget to delete[] and avoid memory leaks
+            delete[] m_data;
+        }
+
+        // fill everything with poison!
+        m_data = (int8_t*) POISON_PTR;
+        m_size = m_capacity = POISON_UINT;
+    }
 
    public:
-    iterator begin();
-    iterator end();
+    // TODO: well, this function is literally similar to get_iterator()...
+    iterator begin() {
+        // TODO: make specific log for this and end() functions
+        vector_log();
+    
+        return reinterpret_cast<iterator>(m_data);
+    }
+
+    iterator end() {
+        vector_log();
+    
+        return reinterpret_cast<iterator>(m_data + m_size * m_typesize);
+    }
 
    public:
     uint64_t size() const { return m_size; }
@@ -69,18 +109,71 @@ class vector {
     constexpr void clear() noexcept;
 
    public:
-    constexpr void resize(uint64_t size);
-    constexpr void resize(uint64_t size, const T& value);
+    constexpr void resize(uint64_t size) {
+        vector_log();
+
+        if (size < m_size) {
+            // ignore, more than enough space already
+            return;
+        }
+
+        uint64_t new_size = std::max(size, static_cast<uint64_t> (m_size * DEFAULT_GROWTH_FACTOR));
+    
+        m_data = realloc_memory(get_iterator(), m_size, new_size);
+        m_capacity = new_size;
+    }
+
+    constexpr void resize(uint64_t size, const T& value) {
+        vector_log();
+
+        if (size < m_size) {
+            // ignore, more than enough space already
+            return;
+        }
+
+        uint64_t new_size = std::max(size, static_cast<uint64_t> (m_size * DEFAULT_GROWTH_FACTOR));
+    
+        m_data = realloc_memory(get_iterator(), m_size, new_size, value);
+        m_capacity = new_size;
+    }
 
    public:
     constexpr reference operator[](uint64_t position);
     constexpr const_reference operator[](uint64_t position) const;
 
+   public:
+    constexpr vector& operator=(const vector& other) noexcept {
+        // TODO: decide, should vector_log() be here
+        vector_log();
+
+        if (other.m_size < m_size) {
+            copy_memory(get_iterator(), 0, other.m_size);
+            destroy_memory(get_iterator(), other.m_size, m_size);
+
+            m_size = other.m_size;
+            return *this;
+        }
+
+        resize(other.m_size);
+        copy_memory(get_iterator(), 0, m_size, other.get_iterator());
+        
+        // WARNING: don't forget to init memory here
+        init_memory(get_iterator(), m_size, other.m_size, other.get_iterator());
+        return *this;
+    } 
+
+    // this operator= achieves PERFECT FORWARDING, so std::forward is used
+    constexpr vector& operator=(vector&& other) noexcept {
+        // remove everything that we have now
+        ~vector();
+        vector(std::forward<vector>(other));
+    }
+
    private:
-    // warning: this function can't be market with 'const' specifier, compilation error will appear
+    // warning: this function can't be market with 'const' specifier,
+    // compilation error will appear
     iterator get_iterator() {
-        // TODO:
-        // make specific log for this function
+        // TODO: make specific log for this function
         return reinterpret_cast<iterator>(m_data);
     }
 
@@ -88,35 +181,50 @@ class vector {
         return reinterpret_cast<const_iterator>(m_data);
     }
 
-    void init_memory(iterator values, uint64_t begin_, uint64_t end_, T&& value = T()) {
+    void init_memory(iterator values,
+                     uint64_t begin_,
+                     uint64_t end_,
+                     T&& value = T()) {
         for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
             // placement new
             new (values + val_idx) T(value);
         }
     }
 
-    void init_memory(iterator values, uint64_t begin_, uint64_t end_, const_iterator fill_values) {
+    void init_memory(iterator values,
+                     uint64_t begin_,
+                     uint64_t end_,
+                     const_iterator fill_values) {
         for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
             // placement new
             new (values + val_idx) T(fill_values[val_idx]);
         }
     }
 
-    void move_init_memory(iterator values, uint64_t begin_, uint64_t end_, const_iterator move_values) {
+    void move_init_memory(iterator values,
+                          uint64_t begin_,
+                          uint64_t end_,
+                          const_iterator move_values) {
         for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
             // placement new and move-semantics
             new (values + val_idx) T(std::move(move_values[val_idx]));
         }
-    } 
+    }
 
-    void copy_memory(iterator values, uint64_t begin_, uint64_t end_, const_iterator copy_values) {
+    void copy_memory(iterator values,
+                     uint64_t begin_,
+                     uint64_t end_,
+                     const_iterator copy_values) {
         for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
             // just assigning the values
             values[val_idx] = copy_values[val_idx];
         }
     }
 
-    void copy_memory(iterator values, uint64_t begin_, uint64_t end_, T&& value = T()) {
+    void copy_memory(iterator values,
+                     uint64_t begin_,
+                     uint64_t end_,
+                     T&& value = T()) {
         for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
             // just assigning the values
             values[val_idx] = value;
@@ -124,7 +232,10 @@ class vector {
     }
 
     // WARNING: do not pass copy_values as const_iterator, it will not work
-    void move_copy_memory(iterator values, uint64_t begin_, uint64_t end_, iterator copy_values) {
+    void move_copy_memory(iterator values,
+                          uint64_t begin_,
+                          uint64_t end_,
+                          iterator copy_values) {
         for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
             // just assigning the values
             values[val_idx] = std::move(copy_values[val_idx]);
@@ -138,17 +249,18 @@ class vector {
         }
     }
 
-    void realloc_memory(iterator current_data, uint64_t current_size, uint64_t required) {
+    void realloc_memory(iterator current_data,
+                        uint64_t current_size,
+                        uint64_t required, const T& value = T()) {
         char* reallocated_memory = new char[required * m_typesize]();
         iterator new_data = reinterpret_cast<iterator>(reallocated_memory);
 
-        move_init_memory(new_data, 0, current_size, current_data);
+        move_init_memory(new_data, 0, current_size, current_data, value);
         destroy_memory(current_data, 0, current_size);
 
         // IMPORTANT: don't forget to DELETE
         delete[] reinterpret_cast<char*>(current_data);
     }
-
 
    private:
     uint64_t m_size;
@@ -156,7 +268,7 @@ class vector {
     uint64_t m_typesize;
     int8_t* m_data;
 
-    private:
+   private:
     /* CONSTANTS */
     const uint32_t DEFAULT_CAPACITY = 16;
     const double DEFAULT_LOAD_FACTOR = 1.0;
