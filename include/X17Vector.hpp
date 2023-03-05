@@ -35,6 +35,47 @@ static const uint64_t POISON_UINT = static_cast<uint64_t>(0xDEADBEEF);
 template <typename T>
 class vector {
    public:
+    struct iterator {
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = T;
+        using pointer           = value_type*;
+        using reference         = value_type&; 
+
+       public:
+        reference operator*() const {
+            return *m_ptr;
+        }
+
+        pointer operator->() {
+            return m_ptr;
+        }
+
+        iterator& operator++() {
+            ++m_ptr;
+            return *this;
+        }
+
+        iterator operator++(int) {
+            iterator temporary = *this;
+            ++(*this);
+
+            // return iterator before ++
+            return temporary;
+        }
+
+        friend bool operator==(const iterator& a, const iterator& b) {
+            return a.m_ptr == b.m_ptr;
+        }
+
+        friend bool operator!=(const iterator& a, const iterator& b) {
+            return a.m_ptr != b.m_ptr;
+        }
+
+       private:
+        pointer m_ptr;    
+    };
+
+   public:
     explicit vector();
 
     explicit vector(const uint64_t elem_total, T&& init_value = T());
