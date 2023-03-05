@@ -25,6 +25,13 @@
 
 namespace X17 {
 
+////////////////////////////////////////////////////////////////////////
+/// CONSTANTS
+////////////////////////////////////////////////////////////////////////
+
+static const int8_t* POISON_PTR = reinterpret_cast<const int8_t*>(0xDEADDEAD);
+static const uint64_t POISON_UINT = static_cast<uint64_t>(0xDEADBEEF);
+
 template <typename T>
 class vector {
    public:
@@ -95,44 +102,37 @@ class vector {
 
     const T* __data_ptr() const;
 
-    void __obj_init(T* values,
-                     uint64_t begin_,
-                     uint64_t end_,
-                     T&& value = T());
+    void __obj_init(T* values, uint64_t begin_, uint64_t end_, T&& value = T());
 
     void __obj_init(T* values,
-                     uint64_t begin_,
-                     uint64_t end_,
-                     const T* init_list);
+                    uint64_t begin_,
+                    uint64_t end_,
+                    const T* init_list);
 
     void __mv_obj_init(T* values,
-                          uint64_t begin_,
-                          uint64_t end_,
-                          const T* move_values);
+                       uint64_t begin_,
+                       uint64_t end_,
+                       const T* move_values);
 
     void __copy_obj(T* values,
-                     uint64_t begin_,
-                     uint64_t end_,
-                     const T* copy_values);
+                    uint64_t begin_,
+                    uint64_t end_,
+                    const T* copy_values);
 
-    void __copy_obj(T* values,
-                     uint64_t begin_,
-                     uint64_t end_,
-                     T&& value = T());
+    void __copy_obj(T* values, uint64_t begin_, uint64_t end_, T&& value = T());
 
     // WARNING: do not pass copy_values as const T*, it will not work
     void __mv_copy_obj(T* values,
-                          uint64_t begin_,
-                          uint64_t end_,
-                          T* copy_values);
+                       uint64_t begin_,
+                       uint64_t end_,
+                       T* copy_values);
 
     void __del_obj(T* values, uint64_t begin_, uint64_t end_);
 
-
     int8_t* __realloc_mem(T* current_data,
-                        uint64_t current_size,
-                        uint64_t required,
-                        const T& value = T());
+                          uint64_t current_size,
+                          uint64_t required,
+                          const T& value = T());
 
    private:
     uint64_t m_size;
@@ -154,36 +154,95 @@ class vector<bool> {
     // nested reference class to access separate bits
     class reference {
        public:
-        reference();
-        ~reference();
+        reference(uint64_t* segment, uint8_t bitidx)
+            : m_segment(segment), m_shift(bitidx) {
+            vector_log();
+        }
+
+        ~reference() {}
 
        public:
-        reference& operator=(bool x) noexcept;
-        reference& operator=(const reference& x) noexcept;
+        reference& operator=(bool x) noexcept {
+            if (!x) {
+                *m_segment &= ~(1 << m_shift);
+            } else {
+                *m_segment |= (1 << m_shift);
+            }
+
+            return *this;
+        }
+
+        reference& operator=(const reference& x) noexcept {
+            m_segment = x.m_segment;
+            m_shift = x.m_shift;
+
+            return *this;
+        }
 
        public:
-        operator bool() const noexcept;
-        void flip() noexcept;
+        operator bool() const noexcept {
+            // TODO: check is there is a better way to do this
+            return (*m_segment & (1 << m_shift)) >> m_shift;
+        }
+
+        void flip() noexcept { operator=(!operator bool()); }
+
+       private:
+        uint64_t* m_segment;
+        uint8_t m_shift;  // bit idx
     };
 
    public:
-    explicit vector();
+    explicit vector()
+        : m_capacity(DEFAULT_CAPACITY), m_size(0), m_data(nullptr) {
+        vector_log();
+    }
 
-    explicit vector(const uint64_t elem_total, bool value);
+    explicit vector(const uint64_t elem_total, bool value)
+        : m_size(elem_total), m_capacity(m_size * DEFAULT_GROWTH_FACTOR) {
+        vector_log();
 
-    explicit vector(const vector<bool>& other);
+        m_data = new uint64_t[__uints_cap(m_capacity)]();
+        for (size_t uint_idx = 0; uint_idx < __uints_cap(m_size); ++uint_idx) {
+            m_data[uint_idx] = value ? UINT_FAST64_MAX : 0;
+        }
+    }
 
+    explicit vector(const vector<bool>& other)
+        : m_size(other.m_size), m_capacity(other.m_capacity) {
+        vector_log();
+
+        m_data = new uint64_t[__uints_cap(m_capacity)]();
+
+        // TODO: make it faster (maybe intel intrinsics??)
+        for (size_t uint_idx = 0; uint_idx < __uints_cap(m_size); ++uint_idx) {
+            m_data[uint_idx] = other.m_data[uint_idx];
+        }
+    }
     // move constructor
-    explicit vector(vector<bool>&& other);
+    explicit vector(vector<bool>&& other) {
+        vector_log();
 
-    ~vector();
+        m_size = other.m_size;
+        m_capacity = other.m_capacity;
+        m_data = nullptr;
 
-   public:
-    bool& front();
-    const bool& front() const;
+        std::swap(m_data, other.m_data);
+    }
 
-    bool& back();
-    const bool& back() const;
+    ~vector() {
+        vector_log();
+
+        if (m_data != nullptr) {
+            delete[] m_data;
+        }
+
+        // TODO: assign POISON_PTR to m_data
+        m_data = nullptr;
+        m_capacity = POISON_UINT;
+        m_size = POISON_UINT;
+        m_typesize = 0;
+    }
 
    public:
     uint64_t size() const { return m_size; }
@@ -191,38 +250,163 @@ class vector<bool> {
     uint64_t capacity() const { return m_capacity; }
 
    public:
-    void push_back(const bool& value);
+    void push_back(const bool value) {
+        vector_log();
 
-    // this push_back implementation allows PERFECT FORWARDING, so std::forward
-    // must be used
-    void push_back(bool&& value);
+        resize(m_capacity ? m_size + 1 : 0);
+        operator[](m_size++) = value;
+    }
 
-    // pop_back required correctly implemented ~bool() to work
-    void pop_back();
+    void pop_back() {
+        if (!m_size) {
+            throw std::range_error("vector underflow");
+        }
+
+        // notice how we don't even need to actually pop anything
+        // it's bit! decreasing size will be enough
+        --m_size;
+    }
+
+    void clear() noexcept {
+        vector_log();
+
+        for (size_t uint_idx = 0; uint_idx < __uints_cap(m_size); ++uint_idx) {
+            m_data[uint_idx] = 0;
+        }
+
+        m_size = 0;
+    }
 
    public:
-    // TODO: implement erase function (to do it, implement iterator first)
-    bool* erase(const bool* first);
+    // TODO: change resize() and reserve(), now they're swapped
+    void resize(uint64_t request) {
+        vector_log();
 
-    bool* erase(const bool* first, const bool* last);
+        // have to use __uints_cap() here since normal checks
+        // can exceed memory usage
+        if (__uints_cap(request) <= __uints_cap(m_capacity)) {
+            return;
+        }
 
-    void clear() noexcept;
+        request = std::max(
+            request, static_cast<uint64_t>(m_capacity * DEFAULT_GROWTH_FACTOR));
+        uint64_t* new_data = new uint64_t[__uints_cap(request)]();
+        // reassign everything
+        for (uint64_t uint_idx = 0; uint_idx < __uints_cap(m_size);
+             ++uint_idx) {
+            new_data[uint_idx] = m_data[uint_idx];
+        }
+
+        // WARNING: don't forget to delete this to avoid memory leaks
+        delete[] m_data;
+
+        m_data = new_data;
+        m_capacity = request;
+    }
+
+    void reserve(uint64_t size, bool value) {
+        vector_log();
+
+        resize(size);
+        for (uint64_t bit_idx = m_size; bit_idx < size; ++bit_idx) {
+            // TODO: think if I can rewrite next line without using operator[]
+            // syntax like that
+            operator[](bit_idx) = value;
+        }
+
+        // change current size
+        m_size = size;
+    }
 
    public:
-    void resize(uint64_t size);
+    vector<bool>& operator=(const vector<bool>& other) noexcept {
+        vector_log();
 
-    void reserve(uint64_t size, bool value);
+        resize(other.size());
+        for (size_t uint_idx = 0; uint_idx < __uints_cap(other.size());
+             ++uint_idx) {
+            m_data[uint_idx] = other[uint_idx];
+        }
+        m_size = other.m_size;
 
-   public:
-    vector<bool>& operator=(const vector<bool>& other) noexcept;
+        // return this vector
+        return *this;
+    }
     // this operator= achieves PERFECT FORWARDING, so std::forward is used
-    vector<bool>& operator=(vector<bool>&& other) noexcept;
+    vector<bool>& operator=(vector<bool>&& other) noexcept {
+        vector_log();
+        // WARNING: don't forget to destroy this first
+        // to avoid memory leaks
+        vector<bool>::~vector();
+
+        vector<bool>(std::forward<vector<bool>>(other));
+        return *this;
+    }
+
+   public:
+    reference operator[](const uint64_t index) noexcept {
+        return reference(m_data + __uints_cap(index),
+                         static_cast<uint8_t>(index % (sizeof(uint64_t) * 8)));
+    }
+
+    const reference operator[](const uint64_t index) const noexcept {
+        return reference(m_data + __uints_cap(index),
+                         static_cast<uint8_t>(index % (sizeof(uint64_t) * 8)));
+    }
+
+   public:
+    reference front() noexcept {
+        if (m_size == 0) {
+            return {m_data, 0};
+        }
+
+        return reference(m_data, 0);
+    }
+
+    const reference front() const noexcept {
+        if (m_size == 0) {
+            return {m_data, 0};
+        }
+
+        return reference(m_data, 0);
+    }
+
+    reference back() noexcept {
+        if (m_size == 0) {
+            return {m_data, 0};
+        }
+
+        return reference(
+            m_data + __uints_cap(m_size - 1),
+            static_cast<uint8_t>((m_size - 1) % (sizeof(uint64_t) * 8)));
+    }
+
+    const reference back() const noexcept {
+        if (m_size == 0) {
+            return {m_data, 0};
+        }
+
+        return reference(
+            m_data + __uints_cap(m_size - 1),
+            static_cast<uint8_t>((m_size - 1) % (sizeof(uint64_t) * 8)));
+    }
 
    private:
     uint64_t m_size;
     uint64_t m_capacity;
     uint64_t m_typesize;
-    int8_t* m_data;
+
+    // IMPORTANT: use unsigned int to avoid extra job with first bit
+    uint64_t* m_data;
+
+   private:
+    uint64_t __seg_ptr(uint64_t index) const {
+        return index / sizeof(uint64_t) * 8;
+    }
+
+    uint64_t __uints_cap(uint64_t requested) const {
+        return requested ? (requested / (sizeof(uint64_t) * 8)) : 0;
+    }
 
    private:
     /* CONSTANTS */
@@ -230,17 +414,12 @@ class vector<bool> {
 
     // TODO: make use of load factor (unused rn)
     constexpr static double DEFAULT_LOAD_FACTOR = 1.0;
-    constexpr static double DEFAULT_GROWTH_FACTOR = 1.618; /* golden ratio */
+    // growth factor for bool vector is NOT the same as for vector<T>
+    constexpr static double DEFAULT_GROWTH_FACTOR = 2.0;
 };
 
 ////////////////////////////////////////////////////////////////////////
-/// CONSTANTS
-////////////////////////////////////////////////////////////////////////
-static const int8_t* POISON_PTR = reinterpret_cast<const int8_t*>(0xDEADDEAD);
-static const uint64_t POISON_UINT = static_cast<uint64_t>(0xDEADBEEF);
-
-////////////////////////////////////////////////////////////////////////
-/// TEMPLATE FUNCTIONS DEFINITION
+/// TEMPLATE FUNCTIONS DEFINITIONS
 ////////////////////////////////////////////////////////////////////////
 
 template <typename T>
@@ -274,7 +453,10 @@ vector<T>::vector(const vector<T>& other)
 
 template <typename T>
 vector<T>::vector(vector<T>&& other)
-    : m_capacity(other.m_capacity), m_size(other.m_size), m_data(nullptr), m_typesize(other.m_typesize) {
+    : m_capacity(other.m_capacity),
+      m_size(other.m_size),
+      m_data(nullptr),
+      m_typesize(other.m_typesize) {
     vector_log();
 
     // ONLY swapping pointers, stealing it, no copying!
@@ -326,7 +508,6 @@ T& vector<T>::back() {
 
     return __data_ptr()[0];
 }
-
 
 template <typename T>
 const T& vector<T>::back() const {
@@ -445,15 +626,15 @@ const T* vector<T>::__data_ptr() const {
     return reinterpret_cast<const T*>(m_data);
 }
 
-///
-///
-///
+////////////////////////////////////////////////////////////////
+/// VECTOR SERVICE FUNCTION (NEVER USE THEM DIRECTLY)
+////////////////////////////////////////////////////////////////
 
 template <typename T>
 void vector<T>::__obj_init(T* values,
-                            uint64_t begin_,
-                            uint64_t end_,
-                            T&& value) {
+                           uint64_t begin_,
+                           uint64_t end_,
+                           T&& value) {
     for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
         // placement new
         new (values + val_idx) T(value);
@@ -463,9 +644,9 @@ void vector<T>::__obj_init(T* values,
 // IMPORTANT: function will cause segfault if size of init_list < size of values
 template <typename T>
 void vector<T>::__obj_init(T* values,
-                            uint64_t begin_,
-                            uint64_t end_,
-                            const T* init_list) {
+                           uint64_t begin_,
+                           uint64_t end_,
+                           const T* init_list) {
     for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
         // placement new
         new (values + val_idx) T(init_list[val_idx]);
@@ -474,9 +655,9 @@ void vector<T>::__obj_init(T* values,
 
 template <typename T>
 void vector<T>::__mv_obj_init(T* values,
-                                 uint64_t begin_,
-                                 uint64_t end_,
-                                 const T* move_values) {
+                              uint64_t begin_,
+                              uint64_t end_,
+                              const T* move_values) {
     for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
         // placement new and move-semantics
         new (values + val_idx) T(std::move(move_values[val_idx]));
@@ -485,9 +666,9 @@ void vector<T>::__mv_obj_init(T* values,
 
 template <typename T>
 void vector<T>::__copy_obj(T* values,
-                            uint64_t begin_,
-                            uint64_t end_,
-                            const T* copy_values) {
+                           uint64_t begin_,
+                           uint64_t end_,
+                           const T* copy_values) {
     for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
         // just assigning the values
         values[val_idx] = copy_values[val_idx];
@@ -496,9 +677,9 @@ void vector<T>::__copy_obj(T* values,
 
 template <typename T>
 void vector<T>::__copy_obj(T* values,
-                            uint64_t begin_,
-                            uint64_t end_,
-                            T&& value) {
+                           uint64_t begin_,
+                           uint64_t end_,
+                           T&& value) {
     for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
         // just assigning the values
         values[val_idx] = value;
@@ -508,9 +689,9 @@ void vector<T>::__copy_obj(T* values,
 // WARNING: do not pass copy_values as const T*, it will not work
 template <typename T>
 void vector<T>::__mv_copy_obj(T* values,
-                                 uint64_t begin_,
-                                 uint64_t end_,
-                                 T* copy_values) {
+                              uint64_t begin_,
+                              uint64_t end_,
+                              T* copy_values) {
     for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
         // just assigning the values
         values[val_idx] = std::move(copy_values[val_idx]);
@@ -527,9 +708,9 @@ void vector<T>::__del_obj(T* values, uint64_t begin_, uint64_t end_) {
 
 template <typename T>
 int8_t* vector<T>::__realloc_mem(T* current_data,
-                               uint64_t current_size,
-                               uint64_t required,
-                               const T& value) {
+                                 uint64_t current_size,
+                                 uint64_t required,
+                                 const T& value) {
     int8_t* reallocated_memory = new int8_t[required * m_typesize]();
     T* new_data = reinterpret_cast<T*>(reallocated_memory);
 
@@ -541,6 +722,10 @@ int8_t* vector<T>::__realloc_mem(T* current_data,
 
     return reallocated_memory;
 }
+
+////////////////////////////////////////////////////////////////
+/// BOOL VECTOR FUNCTIONS
+////////////////////////////////////////////////////////////////
 
 }  // namespace X17
 
