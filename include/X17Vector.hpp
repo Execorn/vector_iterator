@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <iostream>
 #include <cstdio>
+#include <iterator>
 #include <algorithm>
 
 ////////////////////////////////////////////////////////////
@@ -38,10 +39,26 @@ class vector {
     struct iterator {
         using difference_type   = std::ptrdiff_t;
         using value_type        = T;
+        
         using pointer           = value_type*;
-        using reference         = value_type&; 
+        using const_pointer     = const value_type*;
+
+        using reference         = value_type&;
+        using const_reference   = const value_type&;
+
+        using iterator_category = std::random_access_iterator_tag; 
 
        public:
+
+        explicit iterator() : m_ptr(nullptr) {}
+        /* use compiler-generated version of constructor since the class is very simple */
+        explicit iterator(const iterator& other) = default;
+        explicit iterator(iterator&& other) = default;
+ 
+        /* compile-generated operator = */
+        iterator& operator=(const iterator& other) = default;
+        iterator& operator=(iterator&& other) = default;
+
         reference operator*() const {
             return *m_ptr;
         }
@@ -59,20 +76,202 @@ class vector {
             iterator temporary = *this;
             ++(*this);
 
+            return temporary;
+        }
+
+        iterator& operator--() {
+            --m_ptr;
+            return *this;
+        }
+
+        iterator operator--(int) {
+            iterator temporary = *this;
+            --(*this);
+
             // return iterator before ++
             return temporary;
         }
 
-        friend bool operator==(const iterator& a, const iterator& b) {
-            return a.m_ptr == b.m_ptr;
+        iterator operator+(const difference_type index) const {
+            iterator temporary = *this;
+            temporary += index;
+
+            return temporary;
         }
 
-        friend bool operator!=(const iterator& a, const iterator& b) {
-            return a.m_ptr != b.m_ptr;
+        iterator operator-(const difference_type index) const {
+            iterator temporary = *this;
+            // use -= as overloaded operation for temporary
+            temporary -= this->m_ptr;
+
+            return temporary; 
+        }
+
+        difference_type operator-(const iterator& other) const {
+            return m_ptr - other.m_ptr;
+        }    
+
+        iterator& operator+=(const difference_type index) {
+            m_ptr += index;
+
+            return *this;
+        }
+
+        iterator& operator-=(const difference_type index) {
+            m_ptr += index;
+
+            return *this;
+        }
+
+        bool operator==(const iterator& other) const {
+            return m_ptr == other.m_ptr;
+        }
+
+        bool operator!=(const iterator& other) const {
+            return m_ptr != other.m_ptr;
+        }
+
+        bool operator<(const iterator& other) const {
+            return m_ptr < other.m_ptr;
+        }
+
+        bool operator>(const iterator& other) const {
+            return m_ptr > other.m_ptr;
+        }
+
+        bool operator<=(const iterator& other) const {
+            return m_ptr <= other.m_ptr;
+        }
+
+        bool operator>=(const iterator& other) const {
+            return m_ptr >= other.m_ptr;
+        }
+
+        reference operator[](const difference_type index) {
+            return m_ptr[index];
         }
 
        private:
         pointer m_ptr;    
+    };
+
+    struct const_iterator {
+        using difference_type   = std::ptrdiff_t;
+        using value_type        = const T;
+        
+        using pointer           = value_type*;
+        using const_pointer     = const value_type*;
+
+        using reference         = value_type&;
+        using const_reference   = const value_type&;
+
+        using iterator_category = std::random_access_iterator_tag; 
+
+       public:
+
+        explicit const_iterator() : m_ptr(nullptr) {}
+        /* use compiler-generated version of constructor since the class is very simple */
+        explicit const_iterator(const const_iterator& other) = default;
+        explicit const_iterator(const_iterator&& other) = default;
+ 
+        /* compile-generated operator = */
+        const_iterator& operator=(const const_iterator& other) = default;
+        const_iterator& operator=(const_iterator&& other) = default;
+
+        const_reference operator*() const {
+            return *m_ptr;
+        }
+
+        const_pointer operator->() {
+            return m_ptr;
+        }
+
+        const_iterator& operator++() {
+            ++m_ptr;
+            return *this;
+        }
+
+        const_iterator operator++(int) {
+            const_iterator temporary = *this;
+            ++(*this);
+
+            return temporary;
+        }
+
+        const_iterator& operator--() {
+            --m_ptr;
+            return *this;
+        }
+
+        const_iterator operator--(int) {
+            const_iterator temporary = *this;
+            --(*this);
+
+            // return const_iterator before ++
+            return temporary;
+        }
+
+        const_iterator operator+(const difference_type index) const {
+            const_iterator temporary = *this;
+            temporary += index;
+
+            return temporary;
+        }
+
+        const_iterator operator-(const difference_type index) const {
+            const_iterator temporary = *this;
+            // use -= as overloaded operation for temporary
+            temporary -= this->m_ptr;
+
+            return temporary; 
+        }
+
+        difference_type operator-(const const_iterator& other) const {
+            return m_ptr - other.m_ptr;
+        }    
+
+        const_iterator& operator+=(const difference_type index) {
+            m_ptr += index;
+
+            return *this;
+        }
+
+        const_iterator& operator-=(const difference_type index) {
+            m_ptr += index;
+
+            return *this;
+        }
+
+        bool operator==(const const_iterator& other) const {
+            return m_ptr == other.m_ptr;
+        }
+
+        bool operator!=(const const_iterator& other) const {
+            return m_ptr != other.m_ptr;
+        }
+
+        bool operator<(const const_iterator& other) const {
+            return m_ptr < other.m_ptr;
+        }
+
+        bool operator>(const const_iterator& other) const {
+            return m_ptr > other.m_ptr;
+        }
+
+        bool operator<=(const const_iterator& other) const {
+            return m_ptr <= other.m_ptr;
+        }
+
+        bool operator>=(const const_iterator& other) const {
+            return m_ptr >= other.m_ptr;
+        }
+
+        const_reference operator[](const difference_type index) {
+            return m_ptr[index];
+        }
+
+       private:
+        const_pointer m_ptr;    
     };
 
    public:
