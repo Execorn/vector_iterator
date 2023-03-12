@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <iterator>
 #include <algorithm>
+#include <cstdbool>
 
 ////////////////////////////////////////////////////////////
 
@@ -51,6 +52,7 @@ class vector {
        public:
 
         explicit iterator() : m_ptr(nullptr) {}
+        explicit iterator(const pointer* ptr) : m_ptr(ptr) {}
         /* use compiler-generated version of constructor since the class is very simple */
         explicit iterator(const iterator& other) = default;
         explicit iterator(iterator&& other) = default;
@@ -170,6 +172,7 @@ class vector {
        public:
 
         explicit const_iterator() : m_ptr(nullptr) {}
+        explicit const_iterator(const pointer* ptr) : m_ptr(ptr) {}
         /* use compiler-generated version of constructor since the class is very simple */
         explicit const_iterator(const const_iterator& other) = default;
         explicit const_iterator(const_iterator&& other) = default;
@@ -293,6 +296,23 @@ class vector {
     T& back();
     const T& back() const;
 
+    iterator begin() {
+        return iterator(__data_ptr());
+    }
+
+    iterator end() {
+        // WARNING: we DO NOT add 'm_size - 1' because end() points to the element AFTER the last element
+        return iterator(__data_ptr() + m_size);
+    }
+
+    const_iterator begin() const {
+        return const_iterator(__data_ptr());
+    }
+
+    const_iterator end() const {
+        return const_iterator(__data_ptr() + m_size);
+    }      
+
    public:
     uint64_t size() const { return m_size; }
     bool empty() const { return m_size == 0; }
@@ -394,15 +414,20 @@ class vector<bool> {
     // nested reference class to access separate bits
     class reference {
        public:
+        reference() = delete;
+
         reference(uint64_t* segment, uint8_t bitidx)
             : m_segment(segment), m_shift(bitidx) {
             vector_log();
         }
 
+        reference(const reference& other) = default;
+        reference(reference&& other) = default;
+
         ~reference() {}
 
        public:
-        reference& operator=(bool x) noexcept {
+        reference& operator=(bool x) noexcept{
             if (!x) {
                 *m_segment &= ~(1 << m_shift);
             } else {
@@ -412,11 +437,32 @@ class vector<bool> {
             return *this;
         }
 
-        reference& operator=(const reference& x) noexcept {
-            m_segment = x.m_segment;
-            m_shift = x.m_shift;
+        reference& operator=(const reference& x) noexcept = default;
+        reference& operator=(reference&& x) noexcept = default;
 
-            return *this;
+        bool operator==(const reference& x) const noexcept {
+            // TODO: understand why 'operator bool(x)' doesnt compile 
+            return bool(*this) == bool(x);
+        }
+
+        bool operator!=(const reference& x) const noexcept {
+            return bool(*this) != bool(x);
+        }
+
+        bool operator>=(const reference& x) const noexcept {
+            return bool(*this) >= bool(x);
+        }
+
+        bool operator<=(const reference& x) const noexcept {
+            return bool(*this) <= bool(x);
+        }
+
+        bool operator<(const reference& x) const noexcept {
+            return bool(*this) < bool(x);
+        }
+
+        bool operator>(const reference& x) const noexcept {
+            return bool(*this) > bool(x);
         }
 
        public:
@@ -432,6 +478,61 @@ class vector<bool> {
         uint8_t m_shift;  // bit idx
     };
 
+    class const_reference {
+       public:
+        const_reference() = delete;
+
+        const_reference(const uint64_t* segment, const uint8_t bitidx)
+            : m_segment(segment), m_shift(bitidx) {
+            vector_log();
+        }
+
+        const_reference(const const_reference& other) = default;
+        const_reference(const_reference&& other) = default;
+
+        ~const_reference() {}
+
+       public:
+
+        const_reference& operator=(const const_reference& x) noexcept = default;
+        const_reference& operator=(const_reference&& x) noexcept = default;
+
+        bool operator==(const const_reference& x) const noexcept {
+            // TODO: understand why 'operator bool(x)' doesnt compile 
+            return bool(*this) == bool(x);
+        }
+
+        bool operator!=(const const_reference& x) const noexcept {
+            return bool(*this) != bool(x);
+        }
+
+        bool operator>=(const const_reference& x) const noexcept {
+            return bool(*this) >= bool(x);
+        }
+
+        bool operator<=(const const_reference& x) const noexcept {
+            return bool(*this) <= bool(x);
+        }
+
+        bool operator<(const const_reference& x) const noexcept {
+            return bool(*this) < bool(x);
+        }
+
+        bool operator>(const const_reference& x) const noexcept {
+            return bool(*this) > bool(x);
+        }
+
+       public:
+        operator bool() const noexcept {
+            // TODO: check is there is a better way to do this
+            return (*m_segment & (1 << m_shift)) >> m_shift;
+        }
+        
+       private:
+        const uint64_t* m_segment;
+        const uint8_t m_shift;  // bit idx
+    };
+
    public:
     explicit vector()
         : m_capacity(DEFAULT_CAPACITY), m_size(0), m_data(nullptr) {
@@ -443,7 +544,7 @@ class vector<bool> {
         vector_log();
 
         m_data = new uint64_t[__uints_cap(m_capacity)]();
-        for (size_t uint_idx = 0; uint_idx < __uints_cap(m_size); ++uint_idx) {
+        for (size_t uint_idx = 0 ; uint_idx < __uints_cap(m_size); ++uint_idx) {
             m_data[uint_idx] = value ? UINT_FAST64_MAX : 0;
         }
     }
