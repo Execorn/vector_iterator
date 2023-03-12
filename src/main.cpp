@@ -1,4 +1,5 @@
 #include "../include/X17Vector.hpp"
+#include "printf.hpp"
 
 using namespace X17;
 
@@ -19,7 +20,9 @@ void testvector_nonbool() {
 }
 
 int main() {
-    testvector_nonbool();
+    X17::m_printf("test №%i vectors", 10);    
+
+    //testvector_nonbool();
 
     return 0;
 }
