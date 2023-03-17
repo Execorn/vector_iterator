@@ -4,7 +4,9 @@
 #include "generic_alloc.hpp"
 
 int main() {
-    
+    // doesnt work rn
+    // TODO: call static functions? instead
+    auto test1 = alloc(10);
 
     return 0;
 }

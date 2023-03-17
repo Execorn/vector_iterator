@@ -81,6 +81,7 @@ private:
         next_fit_search,
         best_fit_search,
         free_list_search,
+        explicit_free_list,
     };
 
     struct Chunk {
