@@ -3,10 +3,12 @@
 ////////////////////////////////////////////////////////////
 #include "generic_alloc.hpp"
 
+using namespace X17;
+
 int main() {
     // doesnt work rn
     // TODO: call static functions? instead
-    auto test1 = alloc(10);
+    
 
     return 0;
 }
