@@ -348,9 +348,9 @@ class vector {
     void clear() noexcept;
 
    public:
-    void resize(uint64_t size);
+    void reserve(uint64_t size);
 
-    void reserve(uint64_t size, const T& value);
+    void resize(uint64_t size, const T& value);
 
    public:
     /// WARNING!!!
@@ -589,7 +589,6 @@ class vector<bool> {
             delete[] m_data;
         }
 
-        // TODO: assign POISON_PTR to m_data
         m_data = nullptr;
         m_capacity = POISON_UINT;
         m_size = POISON_UINT;
@@ -605,7 +604,7 @@ class vector<bool> {
     void push_back(const bool value) {
         vector_log();
 
-        resize(m_capacity ? m_size + 1 : 0);
+        reserve(m_capacity ? m_size + 1 : 0);
         operator[](m_size++) = value;
     }
 
@@ -615,7 +614,7 @@ class vector<bool> {
         }
 
         // notice how we don't even need to actually pop anything
-        // it's bit! decreasing size will be enough
+        // it's literray size! decreasing size will be enough
         --m_size;
     }
 
@@ -630,8 +629,7 @@ class vector<bool> {
     }
 
    public:
-    // TODO: change resize() and reserve(), now they're swapped
-    void resize(uint64_t request) {
+    void reserve(uint64_t request) {
         vector_log();
 
         // have to use __uints_cap() here since normal checks
@@ -656,10 +654,10 @@ class vector<bool> {
         m_capacity = request;
     }
 
-    void reserve(uint64_t size, bool value) {
+    void resize(uint64_t size, bool value) {
         vector_log();
 
-        resize(size);
+        reserve(size);
         for (uint64_t bit_idx = m_size; bit_idx < size; ++bit_idx) {
             // TODO: think if I can rewrite next line without using operator[]
             // syntax like that
@@ -674,7 +672,7 @@ class vector<bool> {
     vector<bool>& operator=(const vector<bool>& other) noexcept {
         vector_log();
 
-        resize(other.size());
+        reserve(other.size());
         for (size_t uint_idx = 0; uint_idx < __uints_cap(other.size());
              ++uint_idx) {
             m_data[uint_idx] = other[uint_idx];
@@ -872,7 +870,7 @@ template <typename T, template<typename> class Alloc>
 void vector<T, Alloc>::push_back(const T& value) {
     vector_log();
 
-    resize((m_capacity == 0 ? DEFAULT_CAPACITY : m_size + 1));
+    reserve((m_capacity == 0 ? DEFAULT_CAPACITY : m_size + 1));
     __data_ptr()[m_size++] = value;
 }
 
@@ -880,7 +878,7 @@ template <typename T, template<typename> class Alloc>
 void vector<T, Alloc>::push_back(T&& value) {
     vector_log();
 
-    resize((m_capacity == 0 ? DEFAULT_CAPACITY : m_size + 1));
+    reserve((m_capacity == 0 ? DEFAULT_CAPACITY : m_size + 1));
     __data_ptr()[m_size++] = std::forward<T>(value);
 }
 
@@ -896,7 +894,7 @@ void vector<T, Alloc>::pop_back() {
 }
 
 template <typename T, template<typename> class Alloc>
-void vector<T, Alloc>::resize(uint64_t size) {
+void vector<T, Alloc>::reserve(uint64_t size) {
     vector_log();
 
     if (size < m_size) {
@@ -912,7 +910,7 @@ void vector<T, Alloc>::resize(uint64_t size) {
 }
 
 template <typename T, template<typename> class Alloc>
-void vector<T, Alloc>::reserve(uint64_t size, const T& value) {
+void vector<T, Alloc>::resize(uint64_t size, const T& value) {
     vector_log();
 
     if (size < m_size) {
@@ -952,7 +950,7 @@ vector<T, Alloc>& vector<T, Alloc>::operator=(const vector<T, Alloc>& other) noe
         return *this;
     }
 
-    resize(other.m_size);
+    reserve(other.m_size);
     __copy_obj(__data_ptr(), 0, m_size, other.__data_ptr());
 
     // WARNING: don't forget to init memory here
