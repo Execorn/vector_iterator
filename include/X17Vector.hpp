@@ -10,10 +10,9 @@
 #include <iterator>
 #include <algorithm>
 #include <cstdbool>
+#include <vector>
 
 ////////////////////////////////////////////////////////////
-
-#define X17_VDEBUG
 
 #ifdef X17_VDEBUG
 #define vector_log()                                              \
@@ -25,6 +24,8 @@
 
 ////////////////////////////////////////////////////////////
 
+#define DEBUG
+
 namespace X17 {
 
 ////////////////////////////////////////////////////////////////////////
@@ -34,7 +35,7 @@ namespace X17 {
 static const int8_t* POISON_PTR = reinterpret_cast<const int8_t*>(0xDEADDEAD);
 static const uint64_t POISON_UINT = static_cast<uint64_t>(0xDEADBEEF);
 
-template <typename T>
+template <typename T, template<typename> class Alloc = std::allocator>
 class vector {
    public:
     struct iterator {
@@ -150,6 +151,11 @@ class vector {
         }
 
         reference operator[](const difference_type index) {
+            #ifdef DEBUG
+            if (index > m_size) {
+                throw std::range_error("index out of range");
+            }
+            #endif // DEBUG
             return m_ptr[index];
         }
 
@@ -270,6 +276,11 @@ class vector {
         }
 
         const_reference operator[](const difference_type index) {
+            #ifdef DEBUG
+            if (index > m_size) {
+                throw std::range_error("index out of range");
+            }
+            #endif // DEBUG
             return m_ptr[index];
         }
 
@@ -305,11 +316,11 @@ class vector {
         return iterator(__data_ptr() + m_size);
     }
 
-    const_iterator begin() const {
+    const_iterator cbegin() const {
         return const_iterator(__data_ptr());
     }
 
-    const_iterator end() const {
+    const_iterator cend() const {
         return const_iterator(__data_ptr() + m_size);
     }      
 
@@ -763,16 +774,16 @@ class vector<bool> {
 /// TEMPLATE FUNCTIONS DEFINITIONS
 ////////////////////////////////////////////////////////////////////////
 
-template <typename T>
-vector<T>::vector()
+template <typename T, template<typename> class Alloc>
+vector<T, Alloc>::vector()
     : m_capacity(DEFAULT_CAPACITY), m_size(0), m_typesize(sizeof(T)) {
     vector_log();
 
     m_data = new int8_t[m_capacity * m_typesize];
 }
 
-template <typename T>
-vector<T>::vector(const uint64_t elem_total, T&& init_value)
+template <typename T, template<typename> class Alloc>
+vector<T, Alloc>::vector(const uint64_t elem_total, T&& init_value)
     : m_capacity(elem_total), m_size(0), m_typesize(sizeof(T)) {
     vector_log();
 
@@ -780,8 +791,8 @@ vector<T>::vector(const uint64_t elem_total, T&& init_value)
     __obj_init(__data_ptr(), 0, elem_total, std::move(init_value));
 }
 
-template <typename T>
-vector<T>::vector(const vector<T>& other)
+template <typename T, template<typename> class Alloc>
+vector<T, Alloc>::vector(const vector<T>& other)
     : m_capacity(other.m_capacity),
       m_size(other.m_size),
       m_typesize(other.m_typesize) {
@@ -792,8 +803,8 @@ vector<T>::vector(const vector<T>& other)
     __obj_init(__data_ptr(), 0, m_size, other.__data_ptr());
 }
 
-template <typename T>
-vector<T>::vector(vector<T>&& other)
+template <typename T, template<typename> class Alloc>
+vector<T, Alloc>::vector(vector<T>&& other)
     : m_capacity(other.m_capacity),
       m_size(other.m_size),
       m_data(nullptr),
@@ -804,8 +815,8 @@ vector<T>::vector(vector<T>&& other)
     std::swap(this->m_data, other.m_data);
 }
 
-template <typename T>
-vector<T>::~vector() {
+template <typename T, template<typename> class Alloc>
+vector<T, Alloc>::~vector() {
     vector_log();
 
     if (m_data != nullptr) {
@@ -820,61 +831,61 @@ vector<T>::~vector() {
     m_size = m_capacity = POISON_UINT;
 }
 
-template <typename T>
-void vector<T>::clear() noexcept {
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::clear() noexcept {
     vector_log();
 
     __del_obj(__data_ptr(), 0, m_size);
     m_size = 0;
 }
 
-template <typename T>
-T& vector<T>::front() {
+template <typename T, template<typename> class Alloc>
+T& vector<T, Alloc>::front() {
     vector_log();
 
     return __data_ptr()[m_size - 1];
 }
 
-template <typename T>
-const T& vector<T>::front() const {
+template <typename T, template<typename> class Alloc>
+const T& vector<T, Alloc>::front() const {
     // TODO: make specific log for this and back() functions
     vector_log();
 
     return __data_ptr()[m_size - 1];
 }
 
-template <typename T>
-T& vector<T>::back() {
+template <typename T, template<typename> class Alloc>
+T& vector<T, Alloc>::back() {
     vector_log();
 
     return __data_ptr()[0];
 }
 
-template <typename T>
-const T& vector<T>::back() const {
+template <typename T, template<typename> class Alloc>
+const T& vector<T, Alloc>::back() const {
     vector_log();
 
     return __data_ptr()[0];
 }
 
-template <typename T>
-void vector<T>::push_back(const T& value) {
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::push_back(const T& value) {
     vector_log();
 
     resize((m_capacity == 0 ? DEFAULT_CAPACITY : m_size + 1));
     __data_ptr()[m_size++] = value;
 }
 
-template <typename T>
-void vector<T>::push_back(T&& value) {
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::push_back(T&& value) {
     vector_log();
 
     resize((m_capacity == 0 ? DEFAULT_CAPACITY : m_size + 1));
     __data_ptr()[m_size++] = std::forward<T>(value);
 }
 
-template <typename T>
-void vector<T>::pop_back() {
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::pop_back() {
     vector_log();
 
     if (m_size == 0) {
@@ -884,8 +895,8 @@ void vector<T>::pop_back() {
     __data_ptr()[--m_size].~T();
 }
 
-template <typename T>
-void vector<T>::resize(uint64_t size) {
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::resize(uint64_t size) {
     vector_log();
 
     if (size < m_size) {
@@ -900,8 +911,8 @@ void vector<T>::resize(uint64_t size) {
     m_capacity = new_size;
 }
 
-template <typename T>
-void vector<T>::reserve(uint64_t size, const T& value) {
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::reserve(uint64_t size, const T& value) {
     vector_log();
 
     if (size < m_size) {
@@ -918,18 +929,18 @@ void vector<T>::reserve(uint64_t size, const T& value) {
     m_capacity = new_size;
 }
 
-template <typename T>
-T& vector<T>::operator[](uint64_t position) {
+template <typename T, template<typename> class Alloc>
+T& vector<T, Alloc>::operator[](uint64_t position) {
     return __data_ptr()[position];
 }
 
-template <typename T>
-const T& vector<T>::operator[](uint64_t position) const {
+template <typename T, template<typename> class Alloc>
+const T& vector<T, Alloc>::operator[](uint64_t position) const {
     return __data_ptr()[position];
 }
 
-template <typename T>
-vector<T>& vector<T>::operator=(const vector& other) noexcept {
+template <typename T, template<typename> class Alloc>
+vector<T, Alloc>& vector<T, Alloc>::operator=(const vector<T, Alloc>& other) noexcept {
     // TODO: decide, should vector_log() be here
     vector_log();
 
@@ -949,21 +960,21 @@ vector<T>& vector<T>::operator=(const vector& other) noexcept {
     return *this;
 }
 
-template <typename T>
-vector<T>& vector<T>::operator=(vector&& other) noexcept {
+template <typename T, template<typename> class Alloc>
+vector<T, Alloc>& vector<T, Alloc>::operator=(vector<T, Alloc>&& other) noexcept {
     // remove everything that we have now
     ~vector();
     vector(std::forward<vector>(other));
 }
 
-template <typename T>
-T* vector<T>::__data_ptr() {
+template <typename T, template<typename> class Alloc>
+T* vector<T, Alloc>::__data_ptr() {
     // TODO: make specific log for this function
     return reinterpret_cast<T*>(m_data);
 }
 
-template <typename T>
-const T* vector<T>::__data_ptr() const {
+template <typename T, template<typename> class Alloc>
+const T* vector<T, Alloc>::__data_ptr() const {
     return reinterpret_cast<const T*>(m_data);
 }
 
@@ -971,8 +982,8 @@ const T* vector<T>::__data_ptr() const {
 /// VECTOR SERVICE FUNCTION (NEVER USE THEM DIRECTLY)
 ////////////////////////////////////////////////////////////////
 
-template <typename T>
-void vector<T>::__obj_init(T* values,
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::__obj_init(T* values,
                            uint64_t begin_,
                            uint64_t end_,
                            T&& value) {
@@ -983,8 +994,8 @@ void vector<T>::__obj_init(T* values,
 }
 
 // IMPORTANT: function will cause segfault if size of init_list < size of values
-template <typename T>
-void vector<T>::__obj_init(T* values,
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::__obj_init(T* values,
                            uint64_t begin_,
                            uint64_t end_,
                            const T* init_list) {
@@ -994,8 +1005,8 @@ void vector<T>::__obj_init(T* values,
     }
 }
 
-template <typename T>
-void vector<T>::__mv_obj_init(T* values,
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::__mv_obj_init(T* values,
                               uint64_t begin_,
                               uint64_t end_,
                               const T* move_values) {
@@ -1005,8 +1016,8 @@ void vector<T>::__mv_obj_init(T* values,
     }
 }
 
-template <typename T>
-void vector<T>::__copy_obj(T* values,
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::__copy_obj(T* values,
                            uint64_t begin_,
                            uint64_t end_,
                            const T* copy_values) {
@@ -1016,8 +1027,8 @@ void vector<T>::__copy_obj(T* values,
     }
 }
 
-template <typename T>
-void vector<T>::__copy_obj(T* values,
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::__copy_obj(T* values,
                            uint64_t begin_,
                            uint64_t end_,
                            T&& value) {
@@ -1028,8 +1039,8 @@ void vector<T>::__copy_obj(T* values,
 }
 
 // WARNING: do not pass copy_values as const T*, it will not work
-template <typename T>
-void vector<T>::__mv_copy_obj(T* values,
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::__mv_copy_obj(T* values,
                               uint64_t begin_,
                               uint64_t end_,
                               T* copy_values) {
@@ -1039,16 +1050,16 @@ void vector<T>::__mv_copy_obj(T* values,
     }
 }
 
-template <typename T>
-void vector<T>::__del_obj(T* values, uint64_t begin_, uint64_t end_) {
+template <typename T, template<typename> class Alloc>
+void vector<T, Alloc>::__del_obj(T* values, uint64_t begin_, uint64_t end_) {
     for (uint64_t val_idx = begin_; val_idx < end_; ++val_idx) {
         // call destructor for each element
         values[val_idx].~T();
     }
 }
 
-template <typename T>
-int8_t* vector<T>::__realloc_mem(T* current_data,
+template <typename T, template<typename> class Alloc>
+int8_t* vector<T, Alloc>::__realloc_mem(T* current_data,
                                  uint64_t current_size,
                                  uint64_t required,
                                  const T& value) {
@@ -1063,10 +1074,6 @@ int8_t* vector<T>::__realloc_mem(T* current_data,
 
     return reallocated_memory;
 }
-
-////////////////////////////////////////////////////////////////
-/// BOOL VECTOR FUNCTIONS
-////////////////////////////////////////////////////////////////
 
 }  // namespace X17
 

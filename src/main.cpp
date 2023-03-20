@@ -5,14 +5,10 @@ using namespace X17;
 
 void testvector_nonbool() {
     vector<int> test_v(10, 5);
-    test_v.push_back(1);
-    test_v.push_back(12);
-    test_v.push_back(13);
-    test_v.pop_back();
-    test_v.pop_back();
-    test_v.pop_back();
-    test_v.clear();
-    for (size_t idx = 0; idx < 10; ++idx) {
+    for (size_t i = 0; i < 50; ++i) {
+        test_v.push_back(i);
+    }
+    for (size_t idx = 0; idx < 50; ++idx) {
         std::cout << test_v[idx] << " ";
     }
 
@@ -20,9 +16,9 @@ void testvector_nonbool() {
 }
 
 int main() {
-    X17::m_printf("test №%i vectors", 10);    
+    X17::m_printf("test №%i vectors\n", 10);    
 
-    //testvector_nonbool();
+    testvector_nonbool();
 
     return 0;
 }
