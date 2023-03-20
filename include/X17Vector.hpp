@@ -340,7 +340,7 @@ class vector {
     void pop_back();
 
    public:
-    // TODO: implement erase function (to do it, implement iterator first)
+    // TODO: implement erase function
     T* erase(const T* first);
 
     T* erase(const T* first, const T* last);
