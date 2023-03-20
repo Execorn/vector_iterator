@@ -11,6 +11,10 @@
 #include <stdexcept>
 #include <list>
 
+#ifndef ALLOC_NOEXCEPT
+#define ALLOC_NOEXCEPT
+#endif
+
 namespace X17 {
 
 using data_t = intptr_t;
@@ -28,6 +32,15 @@ data_t* allocate(const size_t n_bytes) {
     }
 
     Chunk* new_chunk = mapOSmemory(n_bytes);
+    ++TOTAL_CHUNKS_IN_MEMORY;
+    if (new_chunk == nullptr) {
+#ifndef ALLOC_NOEXCEPT
+        throw std::bad_alloc();
+#endif  // ALLOC_NOEXCEPT
+
+        return nullptr;
+    }
+
     new_chunk->m_used = true;
     new_chunk->m_prev = nullptr;
     new_chunk->m_next = nullptr;
@@ -40,6 +53,7 @@ data_t* allocate(const size_t n_bytes) {
     if (m_heap_tail != nullptr) {
         m_heap_tail->m_next = new_chunk;
         new_chunk->m_prev = m_heap_tail;
+        new_chunk->m_next = m_heap_head;
     }
 
     m_heap_tail = new_chunk;
@@ -49,30 +63,29 @@ data_t* allocate(const size_t n_bytes) {
 
 void deallocate(const data_t* data_ptr) {
     if (data_ptr == nullptr) {
-        // TODO: should I 'throw std::invalid_argument' here?
         return;
     }
 
     Chunk* user_chunk = shiftToHeader(data_ptr);
 
+    if (isCoalesceablePrev(user_chunk)) {
+        user_chunk = user_chunk->m_prev;
+        user_chunk = coalesceChunk(user_chunk);
+    }
     if (isCoalesceableNext(user_chunk)) {
         user_chunk = coalesceChunk(user_chunk);
-    } else if (isCoalesceablePrev(user_chunk)) {
-        user_chunk = coalesceChunk(user_chunk->m_prev);
     }
 
     user_chunk->m_used = false;
 }
 
 const size_t SPLIT_RATE_MIN_BYTES = 16;
+static size_t TOTAL_CHUNKS_IN_MEMORY = 0;
 
 enum class MemoryManagement {
     first_fit_search,
-    // TODO: implement functions for best fit and free_list
     next_fit_search,
-    best_fit_search,
     free_list_search,
-    explicit_free_list,
 };
 
 struct Chunk {
@@ -94,7 +107,7 @@ static Chunk* m_last_found;
 
 static std::list<Chunk*> m_free_list;
 
-static MemoryManagement m_mem_mode;  // = MemoryManagement::first_fit_search;
+static MemoryManagement m_mem_mode;  // = MemoryManagement::next_fit_search;
 
 void resetProgramHeap() {
     if (m_heap_head == nullptr) {
@@ -127,7 +140,7 @@ inline size_t allocationSize(const size_t n_bytes) {
 }
 
 Chunk* mapOSmemory(const size_t n_bytes) {
-    if (n_bytes == 0) {
+    if (n_bytes <= 0) {
         return nullptr;
     }
 
@@ -135,7 +148,9 @@ Chunk* mapOSmemory(const size_t n_bytes) {
     Chunk* current_chunk = (Chunk*)sbrk(0);
 
     if (sbrk(allocationSize(n_bytes)) == (void*)-1) {
+#ifndef ALLOC_NOEXCEPT
         throw std::bad_alloc();
+#endif  // ALLOC_NOEXCEPT
 
         return nullptr;
     }
@@ -145,7 +160,9 @@ Chunk* mapOSmemory(const size_t n_bytes) {
 
 Chunk* shiftToHeader(const data_t* chunk_ptr) {
     if (chunk_ptr == nullptr) {
+#ifndef ALLOC_NOEXCEPT
         throw std::invalid_argument("chunk pointer is null");
+#endif  // ALLOC_NOEXCEPT
     }
 
     return (Chunk*)((uint8_t*)chunk_ptr + sizeof(std::declval<Chunk>().m_data) -
@@ -153,7 +170,7 @@ Chunk* shiftToHeader(const data_t* chunk_ptr) {
 }
 
 Chunk* getFreeChunk(const size_t n_bytes) {
-    if (n_bytes == 0) {
+    if (n_bytes <= 0) {
         return nullptr;
     }
 
@@ -166,33 +183,53 @@ Chunk* getFreeChunk(const size_t n_bytes) {
             return memNextFit(n_bytes);
         }
 
-        case MemoryManagement::best_fit_search: {
-            // TODO: implement best-fit
-            throw std::runtime_error(
-                "Don't use best-fit. Rumors say cats hate it...");
-        }
+            /*
+            case MemoryManagement::best_fit_search: {
+                #ifndef ALLOC_NOEXCEPT
+                throw std::runtime_error(
+                        "Don't use best-fit. Rumors say cats hate it...");
+                #endif // ALLOC_NOEXCEPT
+
+                return nullptr;
+            }
+            */
 
         case MemoryManagement::free_list_search: {
-            return freeList(n_bytes);
+            return memFreeList(n_bytes);
         }
 
         default: {
-            throw std::runtime_error("Amogus");
+#ifndef ALLOC_NOEXCEPT
+            throw std::runtime_error("Unknown MemoryManagement type");
+#endif  // ALLOC_NOEXCEPT
+
+            fprintf(stderr, "MemoryManagement type unknown. Return NULL.\n");
+            return nullptr;
         }
     }
 }
 
 Chunk* memFirstFit(const size_t n_bytes) {
-    if (n_bytes == 0) {
+    if (n_bytes <= 0) {
         return nullptr;
     }
 
+    size_t loop_iteration_counter = 0;
+
     Chunk* current_chunk = m_heap_head;
 
-    // start searching (unoptimized)
+    if (current_chunk->m_used == false && current_chunk->m_size >= n_bytes) {
+        return current_chunk;
+    }
+    current_chunk = current_chunk->m_next;
 
     while (current_chunk) {
-        if (current_chunk->m_used == true || current_chunk->m_size < n_bytes) {
+        if (current_chunk == m_heap_head ||
+            loop_iteration_counter++ >= TOTAL_CHUNKS_IN_MEMORY) {
+            return nullptr;
+        }
+
+        if (current_chunk->m_used == true || current_chunk->m_size <= n_bytes) {
             current_chunk = current_chunk->m_next;
             // continue is needed so we can return current_chunk after the loop
             continue;
@@ -205,17 +242,27 @@ Chunk* memFirstFit(const size_t n_bytes) {
 }
 
 Chunk* memNextFit(const size_t n_bytes) {
-    if (n_bytes == 0) {
+    if (n_bytes <= 0) {
         return nullptr;
     }
+
+    size_t loop_iterations_counter = 0;
 
     // restore the last success position
     Chunk* current_chunk = m_last_found != nullptr ? m_last_found : m_heap_head;
 
-    // TODO: think how to perform it better (maybe bitset?)
-    // start searching (O(n) I guess)
+    if (current_chunk->m_used == false && current_chunk->m_size >= n_bytes) {
+        return current_chunk;
+    }
+    current_chunk = current_chunk->m_next;
+
     while (current_chunk) {
-        if (current_chunk->m_used == true || current_chunk->m_size < n_bytes) {
+        if (current_chunk == m_last_found ||
+            loop_iterations_counter++ >= TOTAL_CHUNKS_IN_MEMORY) {
+            return nullptr;
+        }
+
+        if (current_chunk->m_used == true || current_chunk->m_size <= n_bytes) {
             current_chunk = current_chunk->m_next;
             // continue is needed so we can return current_chunk after the loop
             continue;
@@ -239,6 +286,7 @@ Chunk* splitChunk(Chunk* cur_chunk, const size_t n_bytes) {
                      cur_chunk->m_size);
         next_chunk_pointer->m_size =
             splitted_chunk_old_size - cur_chunk->m_size - allocationSize(0);
+
         next_chunk_pointer->m_used = false;
         next_chunk_pointer->m_next = cur_chunk->m_next;
         next_chunk_pointer->m_prev = cur_chunk;
@@ -258,9 +306,11 @@ inline bool isSplittable(const Chunk* cur_chunk, const size_t n_bytes) {
 }
 
 Chunk* allocateFromList(Chunk* cur_chunk, const size_t n_bytes) {
+#ifndef ALLOC_NOEXCEPT
     if (cur_chunk == nullptr) {
         throw std::invalid_argument("chunk pointer is null");
     }
+#endif
 
     if (isSplittable(cur_chunk, n_bytes)) {
         cur_chunk = splitChunk(cur_chunk, n_bytes);
@@ -280,8 +330,10 @@ inline bool isCoalesceablePrev(const Chunk* chunk_ptr) {
 
 Chunk* coalesceChunk(Chunk* cur_chunk) {
     if (cur_chunk == nullptr || cur_chunk->m_next == nullptr) {
+#ifndef ALLOC_NOEXCEPT
         throw std::invalid_argument(
             "coalesce chunks is broken, report it to devs");
+#endif  // !ALLOC_NOEXCEPT
     }
 
     Chunk* next_chunk = cur_chunk->m_next;
@@ -289,17 +341,12 @@ Chunk* coalesceChunk(Chunk* cur_chunk) {
     cur_chunk->m_next = next_chunk->m_next;
     cur_chunk->m_size += allocationSize(next_chunk->m_size);
 
-    /* TODO: (maybe add poison values for free coalesced chunks ??) */
-    next_chunk->m_used = false;
-    next_chunk->m_size = 0;
-
-    next_chunk->m_next = nullptr;
-    next_chunk->m_prev = nullptr;
+    // NO poison values - just leave next header as a trash in memory
 
     return cur_chunk;
 }
 
-Chunk* freeList(const size_t n_bytes) {
+Chunk* memFreeList(const size_t n_bytes) {
     if (n_bytes <= 0) {
         return nullptr;
     }
