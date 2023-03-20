@@ -25,7 +25,7 @@ data_t* allocate(const size_t n_bytes) {
         return nullptr;
     }
 
-    size_t n_aligned_bytes = std::min(alignBytes(n_bytes), MIN_ALLOC_SIZE);
+    size_t n_aligned_bytes = std::max(alignBytes(n_bytes), MIN_ALLOC_SIZE);
 
     if (Chunk* reused_chunk = getFreeChunk(n_aligned_bytes)) {
         return reused_chunk->m_data;
@@ -78,6 +78,8 @@ void deallocate(const data_t* data_ptr) {
 
     user_chunk->m_used = false;
 }
+
+//TODO: stack allocator, local heap implementations
 
 static const size_t SPLIT_RATE_MIN_BYTES = 16;
 static size_t TOTAL_CHUNKS_IN_MEMORY = 0;
