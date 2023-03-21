@@ -44,7 +44,7 @@ class ObjectTraits {
 };
 
 template <typename T>
-class StandardAllocPolicy {
+class ChunkPolicy {
    public:
     //    typedefs
     typedef T value_type;
@@ -56,20 +56,20 @@ class StandardAllocPolicy {
     typedef std::ptrdiff_t difference_type;
 
    public:
-    //    convert an StandardAllocPolicy<T> to StandardAllocPolicy<U>
+    //    convert an ChunkPolicy<T> to ChunkPolicy<U>
     template <typename U>
     struct rebind {
-        typedef StandardAllocPolicy<U> other;
+        typedef ChunkPolicy<U> other;
     };
 
    public:
-    inline explicit StandardAllocPolicy() {}
-    inline ~StandardAllocPolicy() {}
-    
-    inline explicit StandardAllocPolicy(StandardAllocPolicy const&) {}
+    inline explicit ChunkPolicy() {}
+    inline ~ChunkPolicy() {}
+
+    inline explicit ChunkPolicy(ChunkPolicy const&) {}
 
     template <typename U>
-    inline explicit StandardAllocPolicy(StandardAllocPolicy<U> const&) {}
+    inline explicit ChunkPolicy(ChunkPolicy<U> const&) {}
 
     inline pointer allocate(size_type cnt,
                             typename std::allocator<void>::const_pointer = 0) {
@@ -84,94 +84,100 @@ class StandardAllocPolicy {
 };
 
 template <typename T, typename T2>
-inline bool operator==(StandardAllocPolicy<T> const&,
-                       StandardAllocPolicy<T2> const&) {
+inline bool operator==(ChunkPolicy<T> const&, ChunkPolicy<T2> const&) {
     return true;
 }
+
 template <typename T, typename OtherAllocator>
-inline bool operator==(StandardAllocPolicy<T> const&, OtherAllocator const&) {
+inline bool operator==(ChunkPolicy<T> const&, OtherAllocator const&) {
     return false;
 }
 
-template <typename T>
-class PoolAllocator {
-    /* TYPEDEFS */
-    using value_type = T;
-
-    using pointer = value_type*;
-    using const_pointer = const value_type*;
-
-    using reference = value_type&;
-    using const_reference = const value_type&;
-
-    using size_type = std::size_t;
-    using difference_type = std::ptrdiff_t;
-    /* END OF TYPEDEFS */
+template <typename T,
+          typename Policy = ChunkPolicy<T>,
+          typename Traits = ObjectTraits<T> >
+class Allocator : public Policy, public Traits {
+   private:
+    typedef Policy AllocationPolicy;
+    typedef Traits TTraits;
 
    public:
-    /* Struct to rebind allocator<T> to allocator<U> */
+    typedef typename AllocationPolicy::size_type size_type;
+    typedef typename AllocationPolicy::difference_type difference_type;
+    typedef typename AllocationPolicy::pointer pointer;
+    typedef typename AllocationPolicy::const_pointer const_pointer;
+    typedef typename AllocationPolicy::reference reference;
+    typedef typename AllocationPolicy::const_reference const_reference;
+    typedef typename AllocationPolicy::value_type value_type;
+
+   public:
     template <typename U>
     struct rebind {
-        typedef PoolAllocator<U> other;
+        typedef Allocator<U,
+                          typename AllocationPolicy::rebind<U>::other,
+                          typename TTraits::rebind<U>::other>
+            other;
     };
 
    public:
-    /* use compiler-generator default contructor and destructor */
-    inline explicit PoolAllocator() = default;
-    inline explicit ~PoolAllocator() = default;
+    inline explicit Allocator() {}
+    inline ~Allocator() {}
 
-    inline explicit PoolAllocator(PoolAllocator const&) {}
+    inline Allocator(Allocator const& rhs) : Traits(rhs), Policy(rhs) {}
+    
     template <typename U>
-    inline explicit PoolAllocator(PoolAllocator<U> const&) {}
-
-    inline pointer address(reference ref) { return &ref; }
-
-    inline const_pointer address(const_reference ref) { return &ref; }
-
-    inline pointer allocate(size_type n_bytes,
-                            typename std::allocator<void>::const_pointer = 0) {
-        // TODO: implement my own PoolAllocator here
-        return reinterpret_cast<const_pointer>(::operator new(cnt * sizeof(T)));
-    }
-
-    inline void deallocate(pointer mem_to_free, size_type n_bytes) {
-        ::operator delete(mem_to_free);
-    }
-
-    /* max size possible to allocate */
-    inline size_type max_size() const {
-        return std::numeric_limits<size_type>::max() / sizeof(T);
-    }
-
-    /* construction / destruction */
-    inline void construct(pointer mem_ptr, const value_type& initial_value) {
-        new (mem_ptr) T(initial_value);
-    }
-
-    inline void destroy(pointer mem_ptr) { mem_ptr->~value_type(); }
-
-    inline bool operator==(Allocator const&) { return true; }
-
-    inline bool operator!=(Allocator const& a) { return !operator==(a); }
+    inline Allocator(Allocator<U> const&) {}
+    
+    template <typename U, typename P, typename T2>
+    inline Allocator(Allocator<U, P, T2> const& rhs)
+        : Traits(rhs), Policy(rhs) {}
 };
 
-/*
-explicit PoolAllocator(const size_t chunks_per_block) :
-        m_chunks_per_block(chunks_per_block) {}
+template <typename T, typename P, typename Tr>
+inline bool operator==(Allocator<T, P, Tr> const& lhs,
+                       Allocator<T, P, Tr> const& rhs) {
+    return operator==(static_cast<P&>(lhs), static_cast<P&>(rhs));
+}
 
-    void* allocate(const size_t n_bytes);
-    void deallocate(void* mem_to_free, size_t n_bytes);
+template <typename T,
+          typename P,
+          typename Tr,
+          typename T2,
+          typename P2,
+          typename Tr2>
+inline bool operator==(Allocator<T, P, Tr> const& lhs,
+                       Allocator<T2, P2, Tr2> const& rhs) {
+    return operator==(static_cast<P&>(lhs), static_cast<P2&>(rhs));
+}
 
-    struct Chunk {
-        Chunk* m_next;
-    }
+template <typename T, typename P, typename Tr, typename OtherAllocator>
+inline bool operator==(Allocator<T, P, Tr> const& lhs,
+                       OtherAllocator const& rhs) {
+    return operator==(static_cast<P&>(lhs), rhs);
+}
 
-    private:
-    size_t m_chunks_per_block;
+template <typename T, typename P, typename Tr>
+inline bool operator!=(Allocator<T, P, Tr> const& lhs,
+                       Allocator<T, P, Tr> const& rhs) {
+    return !operator==(lhs, rhs);
+}
 
-    Chunk* m_alloc = nullptr;
-    Chunk* m_alloc_block();
-*/
+template <typename T,
+          typename P,
+          typename Tr,
+          typename T2,
+          typename P2,
+          typename Tr2>
+inline bool operator!=(Allocator<T, P, Tr> const& lhs,
+                       Allocator<T2, P2, Tr2> const& rhs) {
+    return !operator==(lhs, rhs);
+}
+
+template <typename T, typename P, typename Tr, typename OtherAllocator>
+inline bool operator!=(Allocator<T, P, Tr> const& lhs,
+                       OtherAllocator const& rhs) {
+    return !operator==(lhs, rhs);
+}
 
 }  // namespace X17
 
