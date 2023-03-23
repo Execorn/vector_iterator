@@ -96,7 +96,7 @@ inline bool operator==(ChunkPolicy<T> const&, OtherAllocator const&) {
 template <typename T,
           typename Policy = ChunkPolicy<T>,
           typename Traits = ObjectTraits<T> >
-class Allocator : public Policy, public Traits {
+class PoolAllocator : public Policy, public Traits {
    private:
     typedef Policy AllocationPolicy;
     typedef Traits TTraits;
@@ -113,29 +113,29 @@ class Allocator : public Policy, public Traits {
    public:
     template <typename U>
     struct rebind {
-        typedef Allocator<U,
+        typedef PoolAllocator<U,
                           typename AllocationPolicy::rebind<U>::other,
                           typename TTraits::rebind<U>::other>
             other;
     };
 
    public:
-    inline explicit Allocator() {}
-    inline ~Allocator() {}
+    inline explicit PoolAllocator() {}
+    inline ~PoolAllocator() {}
 
-    inline Allocator(Allocator const& rhs) : Traits(rhs), Policy(rhs) {}
+    inline PoolAllocator(PoolAllocator const& rhs) : Traits(rhs), Policy(rhs) {}
     
     template <typename U>
-    inline Allocator(Allocator<U> const&) {}
+    inline PoolAllocator(PoolAllocator<U> const&) {}
     
     template <typename U, typename P, typename T2>
-    inline Allocator(Allocator<U, P, T2> const& rhs)
+    inline PoolAllocator(PoolAllocator<U, P, T2> const& rhs)
         : Traits(rhs), Policy(rhs) {}
 };
 
 template <typename T, typename P, typename Tr>
-inline bool operator==(Allocator<T, P, Tr> const& lhs,
-                       Allocator<T, P, Tr> const& rhs) {
+inline bool operator==(PoolAllocator<T, P, Tr> const& lhs,
+                       PoolAllocator<T, P, Tr> const& rhs) {
     return operator==(static_cast<P&>(lhs), static_cast<P&>(rhs));
 }
 
@@ -145,20 +145,20 @@ template <typename T,
           typename T2,
           typename P2,
           typename Tr2>
-inline bool operator==(Allocator<T, P, Tr> const& lhs,
-                       Allocator<T2, P2, Tr2> const& rhs) {
+inline bool operator==(PoolAllocator<T, P, Tr> const& lhs,
+                       PoolAllocator<T2, P2, Tr2> const& rhs) {
     return operator==(static_cast<P&>(lhs), static_cast<P2&>(rhs));
 }
 
 template <typename T, typename P, typename Tr, typename OtherAllocator>
-inline bool operator==(Allocator<T, P, Tr> const& lhs,
+inline bool operator==(PoolAllocator<T, P, Tr> const& lhs,
                        OtherAllocator const& rhs) {
     return operator==(static_cast<P&>(lhs), rhs);
 }
 
 template <typename T, typename P, typename Tr>
-inline bool operator!=(Allocator<T, P, Tr> const& lhs,
-                       Allocator<T, P, Tr> const& rhs) {
+inline bool operator!=(PoolAllocator<T, P, Tr> const& lhs,
+                       PoolAllocator<T, P, Tr> const& rhs) {
     return !operator==(lhs, rhs);
 }
 
@@ -168,13 +168,13 @@ template <typename T,
           typename T2,
           typename P2,
           typename Tr2>
-inline bool operator!=(Allocator<T, P, Tr> const& lhs,
-                       Allocator<T2, P2, Tr2> const& rhs) {
+inline bool operator!=(PoolAllocator<T, P, Tr> const& lhs,
+                       PoolAllocator<T2, P2, Tr2> const& rhs) {
     return !operator==(lhs, rhs);
 }
 
 template <typename T, typename P, typename Tr, typename OtherAllocator>
-inline bool operator!=(Allocator<T, P, Tr> const& lhs,
+inline bool operator!=(PoolAllocator<T, P, Tr> const& lhs,
                        OtherAllocator const& rhs) {
     return !operator==(lhs, rhs);
 }
