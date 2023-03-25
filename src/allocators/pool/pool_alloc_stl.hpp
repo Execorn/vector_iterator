@@ -163,6 +163,12 @@ template <typename T>
 class ObjectTraits {
     /* TYPEDEFS */
     using value_type = T;
+
+    using pointer = value_type*;
+    using const_pointer = value_type const*;
+
+    using reference = value_type&;
+    using const_reference = value_type const&;
     /* END OF TYPEDEFS */
 
    public:
@@ -178,16 +184,15 @@ class ObjectTraits {
     template <typename U>
     inline explicit ObjectTraits(ObjectTraits<U> const&) {}
 
-    inline value_type* address(value_type& ref) { return &ref; }
+    inline pointer address(reference ref) { return &ref; }
 
-    inline value_type const* address(value_type const& ref) { return &ref; }
+    inline const_pointer address(const_reference ref) { return &ref; }
 
-    inline void construct(value_type* mem_ptr,
-                          const value_type& initial_value) {
+    inline void construct(pointer mem_ptr, const_reference initial_value) {
         new (mem_ptr) value_type(initial_value);
     }
 
-    inline void destroy(value_type* mem_ptr) { mem_ptr->~value_type(); }
+    inline void destroy(pointer mem_ptr) { mem_ptr->~value_type(); }
 };
 
 template <typename T>
