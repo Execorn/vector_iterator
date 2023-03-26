@@ -13,9 +13,11 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <memory>
 
 #define DEBUG
 namespace X17 {
+
 template <typename T, std::size_t chunksPerBlock = 512>
 class MemoryPool {
     /* TYPEDEFS */
@@ -111,12 +113,15 @@ class MemoryPool {
         namespace fs = std::filesystem;
         // TODO: ask ded if check is needed
         if (!fs::is_directory("alloc_logs") || !fs::exists("alloc_logs")) {
-            fs::create_directories("alloc_logs");
+            if (!fs::create_directory("alloc_logs")) {
+                throw std::runtime_error(
+                    "log directory doesn't exist, creation failed")
+            }
         }
 
         m_log_stream = fopen(m_log_filename.c_str(), "a+");
         if (m_log_stream == nullptr) {
-            throw runtime_error("can't open/create log file");
+            throw std::runtime_error("can't open/create log file");
         }
 
         fprintf(m_log_stream,
@@ -159,46 +164,10 @@ class MemoryPool {
 #endif  // DEBUG
 };
 
-template <typename T>
-class ObjectTraits {
+template <typename T, std::size_t chunksPerBlock = 512>
+class PoolAllocator : private MemoryPool<T, chunksPerBlock> {
+   public:
     /* TYPEDEFS */
-    using value_type = T;
-
-    using pointer = value_type*;
-    using const_pointer = value_type const*;
-
-    using reference = value_type&;
-    using const_reference = value_type const&;
-    /* END OF TYPEDEFS */
-
-   public:
-    template <typename U>
-    struct rebind {
-        typedef ObjectTraits<U> other;
-    };
-
-   public:
-    inline explicit ObjectTrait() {}
-    inline ~ObjectTraits() {}
-
-    template <typename U>
-    inline explicit ObjectTraits(ObjectTraits<U> const&) {}
-
-    inline pointer address(reference ref) { return &ref; }
-
-    inline const_pointer address(const_reference ref) { return &ref; }
-
-    inline void construct(pointer mem_ptr, const_reference initial_value) {
-        new (mem_ptr) value_type(initial_value);
-    }
-
-    inline void destroy(pointer mem_ptr) { mem_ptr->~value_type(); }
-};
-
-template <typename T>
-class PoolAllocPolicy {
-   public:
-    //    typedefs
     typedef T value_type;
     typedef value_type* pointer;
     typedef const value_type* const_pointer;
@@ -206,130 +175,94 @@ class PoolAllocPolicy {
     typedef const value_type& const_reference;
     typedef std::size_t size_type;
     typedef std::ptrdiff_t difference_type;
+    /* END OF TYPEDEFS */
 
    public:
-    //    convert an PoolAllocPolicy<T> to PoolAllocPolicy<U>
     template <typename U>
     struct rebind {
-        typedef PoolAllocPolicy<U> other;
+        typedef PoolAllocator<U, chunksPerBlock> other;
     };
 
    public:
-    inline explicit PoolAllocPolicy() {}
-    inline ~PoolAllocPolicy() {}
+    inline explicit PoolAllocator() = default;
 
-    inline explicit PoolAllocPolicy(PoolAllocPolicy const&) {}
-
-    template <typename U>
-    inline explicit PoolAllocPolicy(PoolAllocPolicy<U> const&) {}
-
-    inline pointer allocate(size_type cnt,
-                            typename std::allocator<void>::const_pointer = 0) {
-        return reinterpret_cast<pointer>(::operator new(cnt * sizeof(T)));
+    inline ~PoolAllocator() {
+        if (m_rebind_allocator != nullptr) {
+            // free previously allocated memory
+            delete m_rebind_allocator;
+        }
     }
 
-    inline void deallocate(pointer p, size_type) { ::operator delete(p); }
+    inline explicit PoolAllocator(PoolAllocator const& other)
+        : m_cp_allocator(other) {}
 
+    template <typename U>
+    inline explicit PoolAllocator(
+        PoolAllocator<U, chunksPerBlock> const& other) {
+        if (!std::is_same<T, U>::value == false) {
+            m_rebind_allocator = new std::allocator<T>();
+        }
+    }
+
+    //    address
+    inline pointer address(reference r) { return &r; }
+    inline const_pointer address(const_reference r) { return &r; }
+
+    //    memory allocation
+    inline pointer allocate(
+        size_type cnt,
+        typename std::allocator<void>::const_pointer mem_ptr = 0) {
+        if (m_cp_allocator != nullptr) {
+            return m_cp_allocator->allocate(cnt, mem_ptr);
+        }
+
+        if (m_rebind_allocator != nullptr) {
+            return m_rebind_allocator->allocate(cnt, mem_ptr);
+        }
+
+        // main body of function that is called if there are no rebind and copy
+        // allocators
+
+        if (cnt != 1 || mem_ptr != nullptr) {
+            throw std::bad_alloc();
+        } else {
+            return MemoryPool<T, chunksPerBlock>::allocate();
+        }
+    }
+
+    inline void deallocate(pointer ptr, size_type cnt) {
+        if (m_cp_allocator != nullptr) {
+            m_cp_allocator->deallocate(ptr, cnt);
+            return;
+        }
+
+        if (m_rebind_allocator != nullptr) {
+            m_rebind_allocator->deallocate(ptr, cnt);
+            return;
+        }
+
+        // main body of function that is called if there are no rebind and copy
+        // allocators
+
+        MemoryPool<T, chunksPerBlock>::deallocate(ptr);
+    }
+
+    //    size
     inline size_type max_size() const {
-        return std::numeric_limits<size_type>::max();
+        return std::numeric_limits<size_type>::max() / sizeof(T);
     }
-};
 
-template <typename T, typename T2>
-inline bool operator==(PoolAllocPolicy<T> const&, PoolAllocPolicy<T2> const&) {
-    return true;
-}
+    //    construction/destruction
+    inline void construct(pointer p, const T& t) { new (p) T(t); }
+    inline void destroy(pointer p) { p->~T(); }
 
-template <typename T, typename OtherAllocator>
-inline bool operator==(PoolAllocPolicy<T> const&, OtherAllocator const&) {
-    return false;
-}
+    inline bool operator==(PoolAllocator const&) { return true; }
+    inline bool operator!=(PoolAllocator const& a) { return !operator==(a); }
 
-template <typename T,
-          typename Policy = PoolAllocPolicy<T>,
-          typename Traits = ObjectTraits<T> >
-class PoolAllocator : public Policy, public Traits {
    private:
-    typedef Policy AllocationPolicy;
-    typedef Traits TTraits;
-
-   public:
-    typedef typename AllocationPolicy::size_type size_type;
-    typedef typename AllocationPolicy::difference_type difference_type;
-    typedef typename AllocationPolicy::pointer pointer;
-    typedef typename AllocationPolicy::const_pointer const_pointer;
-    typedef typename AllocationPolicy::reference reference;
-    typedef typename AllocationPolicy::const_reference const_reference;
-    typedef typename AllocationPolicy::value_type value_type;
-
-   public:
-    template <typename U>
-    struct rebind {
-        typedef PoolAllocator<U,
-                              typename AllocationPolicy::rebind<U>::other,
-                              typename TTraits::rebind<U>::other>
-            other;
-    };
-
-   public:
-    inline explicit PoolAllocator() {}
-    inline ~PoolAllocator() {}
-
-    inline PoolAllocator(PoolAllocator const& rhs) : Traits(rhs), Policy(rhs) {}
-
-    template <typename U>
-    inline PoolAllocator(PoolAllocator<U> const&) {}
-
-    template <typename U, typename P, typename T2>
-    inline PoolAllocator(PoolAllocator<U, P, T2> const& rhs)
-        : Traits(rhs), Policy(rhs) {}
-};
-
-template <typename T, typename P, typename Tr>
-inline bool operator==(PoolAllocator<T, P, Tr> const& lhs,
-                       PoolAllocator<T, P, Tr> const& rhs) {
-    return operator==(static_cast<P&>(lhs), static_cast<P&>(rhs));
-}
-
-template <typename T,
-          typename P,
-          typename Tr,
-          typename T2,
-          typename P2,
-          typename Tr2>
-inline bool operator==(PoolAllocator<T, P, Tr> const& lhs,
-                       PoolAllocator<T2, P2, Tr2> const& rhs) {
-    return operator==(static_cast<P&>(lhs), static_cast<P2&>(rhs));
-}
-
-template <typename T, typename P, typename Tr, typename OtherAllocator>
-inline bool operator==(PoolAllocator<T, P, Tr> const& lhs,
-                       OtherAllocator const& rhs) {
-    return operator==(static_cast<P&>(lhs), rhs);
-}
-
-template <typename T, typename P, typename Tr>
-inline bool operator!=(PoolAllocator<T, P, Tr> const& lhs,
-                       PoolAllocator<T, P, Tr> const& rhs) {
-    return !operator==(lhs, rhs);
-}
-
-template <typename T,
-          typename P,
-          typename Tr,
-          typename T2,
-          typename P2,
-          typename Tr2>
-inline bool operator!=(PoolAllocator<T, P, Tr> const& lhs,
-                       PoolAllocator<T2, P2, Tr2> const& rhs) {
-    return !operator==(lhs, rhs);
-}
-
-template <typename T, typename P, typename Tr, typename OtherAllocator>
-inline bool operator!=(PoolAllocator<T, P, Tr> const& lhs,
-                       OtherAllocator const& rhs) {
-    return !operator==(lhs, rhs);
-}
+    PoolAllocator* m_cp_allocator;
+    std::allocator<T>* m_rebind_allocator;
+};  //    end of class PoolAllocator
 
 }  // namespace X17
 
