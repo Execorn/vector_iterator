@@ -268,16 +268,6 @@ class PoolAllocator : private MemoryPool<T, chunksPerBlock> {
     std::allocator<T>* m_rebind_allocator;
 };  //    end of class PoolAllocator
 
-template <typename T, typename T2>
-inline bool operator==(PoolAllocator<T> const&, PoolAllocator<T2> const&) {
-    return true;
-}
-
-template <typename T, typename OtherAllocator>
-inline bool operator==(PoolAllocator<T> const&, OtherAllocator const&) {
-    return false;
-}
-
 }  // namespace X17
 
 #endif  // !X17_POOL_ALLOC_STABLE
