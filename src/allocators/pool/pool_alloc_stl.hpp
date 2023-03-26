@@ -15,12 +15,18 @@
 #include <filesystem>
 #include <memory>
 
-#define RELEASE
-#define DEFAULT_CHUNKS_PER_BLOCK 4 * 1024
+// PoolAllocator config file (modified by user)
+#include "config_pool.hpp"
 
-#ifndef RELEASE
+
+#ifdef POOL_ALLOC_DEBUG
 #define DEBUG
 #endif
+
+#ifndef DEFAULT_CHUNKS_PER_BLOCK
+#define DEFAULT_CHUNKS_PER_BLOCK 4 * 1024
+#endif
+
 namespace X17 {
 
 #ifdef DEBUG
