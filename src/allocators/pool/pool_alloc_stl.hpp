@@ -15,10 +15,20 @@
 #include <filesystem>
 #include <memory>
 
+#define RELEASE
+#define DEFAULT_CHUNKS_PER_BLOCK 4 * 1024
+
+#ifndef RELEASE
 #define DEBUG
+#endif
 namespace X17 {
 
-template <typename T, std::size_t chunksPerBlock = 512>
+#ifdef DEBUG
+static const std::string m_log_filename = "alloc_logs/mempool.log";
+static FILE* m_log_stream = nullptr;
+#endif  // DEBUG
+
+template <typename T, std::size_t chunksPerBlock = DEFAULT_CHUNKS_PER_BLOCK>
 class MemoryPool {
     /* TYPEDEFS */
     typedef T* pointer;
@@ -43,15 +53,15 @@ class MemoryPool {
         // cannot modify m_next!! (to avoid collisions)
         ObjectPool* const m_next;
 
-       private:
         // m_bytes_per_block is min(sizeof(T), sizeof(Chunk))
-        static constexpr std::size_t m_bytes_per_block = sizeof(Chunk) >
-                                                                 sizeof(T)
-                                                             ? sizeof(Chunk)
-                                                             : sizeof(T);
+        static const std::size_t m_bytes_per_block = sizeof(Chunk) > sizeof(T)
+                                                         ? sizeof(Chunk)
+                                                         : sizeof(T);
         uint8_t m_buffer[chunksPerBlock * m_bytes_per_block];
 
-        pointer recieve_chunk(const std::size_t chunk_index) const {
+        // TODO: ask how to mark this func as const and not get 'cast away
+        // qualifiers' error
+        pointer recieve_chunk(const std::size_t chunk_index) {
 #ifdef DEBUG
             fprintf(m_log_stream,
                     "\nAccess in ObjectPool chunk with index '%zu'. Chunk "
@@ -115,7 +125,7 @@ class MemoryPool {
         if (!fs::is_directory("alloc_logs") || !fs::exists("alloc_logs")) {
             if (!fs::create_directory("alloc_logs")) {
                 throw std::runtime_error(
-                    "log directory doesn't exist, creation failed")
+                    "log directory doesn't exist, creation failed");
             }
         }
 
@@ -157,14 +167,9 @@ class MemoryPool {
     ObjectPool* m_head_pool{nullptr};
 
     std::size_t m_blocks_in_pool{chunksPerBlock};
-
-#ifdef DEBUG
-    std::string m_log_filename{"alloc_logs/mempool.log"};
-    FILE* m_log_stream{nullptr};
-#endif  // DEBUG
 };
 
-template <typename T, std::size_t chunksPerBlock = 512>
+template <typename T, std::size_t chunksPerBlock = DEFAULT_CHUNKS_PER_BLOCK>
 class PoolAllocator : private MemoryPool<T, chunksPerBlock> {
    public:
     /* TYPEDEFS */
