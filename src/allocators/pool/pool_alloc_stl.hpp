@@ -252,7 +252,6 @@ class PoolAllocator : private MemoryPool<T, chunksPerBlock> {
         MemoryPool<T, chunksPerBlock>::deallocate(ptr);
     }
 
-    //    size
     inline size_type max_size() const {
         return std::numeric_limits<size_type>::max() / sizeof(T);
     }
@@ -268,6 +267,16 @@ class PoolAllocator : private MemoryPool<T, chunksPerBlock> {
     PoolAllocator* m_cp_allocator;
     std::allocator<T>* m_rebind_allocator;
 };  //    end of class PoolAllocator
+
+template <typename T, typename T2>
+inline bool operator==(PoolAllocator<T> const&, PoolAllocator<T2> const&) {
+    return true;
+}
+
+template <typename T, typename OtherAllocator>
+inline bool operator==(PoolAllocator<T> const&, OtherAllocator const&) {
+    return false;
+}
 
 }  // namespace X17
 
