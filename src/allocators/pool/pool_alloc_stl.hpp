@@ -35,7 +35,7 @@ static FILE* m_log_stream = nullptr;
 #endif  // DEBUG
 
 template <typename T, std::size_t chunksPerBlock = DEFAULT_CHUNKS_PER_BLOCK>
-class MemoryPool {
+class MemPool {
     /* TYPEDEFS */
     typedef T* pointer;
     typedef const T* const const_pointer;
@@ -84,7 +84,7 @@ class MemoryPool {
     pointer allocate() {
 #ifdef DEBUG
         fprintf(m_log_stream,
-                "\nallocate() called in MemoryPool with addr:'%p'.", this);
+                "\nallocate() called in MemPool with addr:'%p'.", this);
 #endif  // DEBUG
 
         if (m_free_blocks_head != nullptr) {
@@ -109,7 +109,7 @@ class MemoryPool {
     void deallocate(pointer mem_to_dealloc) {
 #ifdef DEBUG
         fprintf(m_log_stream,
-                "\ndeallocate() with mem_to_dealloc='%p' called in MemoryPool "
+                "\ndeallocate() with mem_to_dealloc='%p' called in MemPool "
                 "with addr:'%p'.",
                 mem_to_dealloc, this);
 #endif  // DEBUG
@@ -121,7 +121,7 @@ class MemoryPool {
         m_free_blocks_head = current_chunk;
     }
 
-    MemoryPool()
+    MemPool()
         : m_blocks_in_pool(chunksPerBlock),
           m_free_blocks_head(nullptr),
           m_head_pool(nullptr) {
@@ -146,7 +146,7 @@ class MemoryPool {
 #endif  // DEBUG
     }
 
-    ~MemoryPool() {
+    ~MemPool() {
         while (m_head_pool != nullptr) {
             ObjectPool* current_object_pool = m_head_pool;
             m_head_pool = current_object_pool->m_next;
@@ -160,13 +160,13 @@ class MemoryPool {
 #endif  // DEBUG
     }
 
-    /* MOVE-SEMANTICS ARE COMPLETELY PROHIBITED FOR MemoryPool */
-    MemoryPool(const MemoryPool& other) = delete;
-    MemoryPool(MemoryPool&& other) = delete;
+    /* MOVE-SEMANTICS ARE COMPLETELY PROHIBITED FOR MemPool */
+    MemPool(const MemPool& other) = delete;
+    MemPool(MemPool&& other) = delete;
 
-    /* ASSIGNMENT OPERATORS ARE COMPLETELY PROHIBITED FOR MemoryPool */
-    MemoryPool operator=(MemoryPool&& other) = delete;
-    MemoryPool operator=(const MemoryPool& MemoryPool) = delete;
+    /* ASSIGNMENT OPERATORS ARE COMPLETELY PROHIBITED FOR MemPool */
+    MemPool operator=(MemPool&& other) = delete;
+    MemPool operator=(const MemPool& MemPool) = delete;
 
    private:
     Chunk* m_free_blocks_head{nullptr};
@@ -176,7 +176,7 @@ class MemoryPool {
 };
 
 template <typename T, std::size_t chunksPerBlock = DEFAULT_CHUNKS_PER_BLOCK>
-class PoolAllocator : private MemoryPool<T, chunksPerBlock> {
+class PoolAllocator : private MemPool<T, chunksPerBlock> {
    public:
     /* TYPEDEFS */
     typedef T value_type;
@@ -237,7 +237,7 @@ class PoolAllocator : private MemoryPool<T, chunksPerBlock> {
         if (cnt != 1 || mem_ptr != nullptr) {
             throw std::bad_alloc();
         } else {
-            return MemoryPool<T, chunksPerBlock>::allocate();
+            return MemPool<T, chunksPerBlock>::allocate();
         }
     }
 
@@ -255,7 +255,7 @@ class PoolAllocator : private MemoryPool<T, chunksPerBlock> {
         // main body of function that is called if there are no rebind and copy
         // allocators
 
-        MemoryPool<T, chunksPerBlock>::deallocate(ptr);
+        MemPool<T, chunksPerBlock>::deallocate(ptr);
     }
 
     inline size_type max_size() const {
